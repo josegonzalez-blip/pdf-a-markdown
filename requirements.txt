@@ -1,5 +1,7 @@
 streamlit
-markitdown[pdf]
+markitdown[pdf,xlsx]
 pdf2image
 pytesseract
 Pillow
+openpyxl
+xlrd
