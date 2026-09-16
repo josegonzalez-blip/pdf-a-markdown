@@ -62,18 +62,24 @@ md = MarkItDown()
 # =====================================================================
 def ocr_imagen(imagen):
     import pytesseract
-    img = imagen.convert("L")  # escala de grises ayuda al OCR
-    for lang in ("spa+eng", "spa", "eng"):
-        try:
-            texto = pytesseract.image_to_string(img, lang=lang)
-            if texto.strip():
-                return texto
-        except Exception:
-            continue
-    try:
-        return pytesseract.image_to_string(img)  # ultimo intento sin idioma
-    except Exception:
-        return ""
+    from PIL import ImageOps
+
+    # Preprocesamos: escala de grises + auto contraste (ayuda con fotos)
+    img = imagen.convert("L")
+    img = ImageOps.autocontrast(img)
+
+    # Probamos distintos "modos de pagina" (PSM). El 6 y el 4 suelen rescatar
+    # fotos con borde/fondo donde el modo automatico (3) falla.
+    configs = ["--oem 3 --psm 6", "--oem 3 --psm 4", "--oem 3 --psm 3", "--oem 3 --psm 11"]
+    for cfg in configs:
+        for lang in ("spa+eng", "spa", "eng"):
+            try:
+                texto = pytesseract.image_to_string(img, lang=lang, config=cfg)
+                if texto.strip():
+                    return texto
+            except Exception:
+                continue
+    return ""
 
 
 # =====================================================================
