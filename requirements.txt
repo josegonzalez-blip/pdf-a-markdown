@@ -1,2 +1,5 @@
 streamlit
 markitdown[pdf]
+pdf2image
+pytesseract
+Pillow

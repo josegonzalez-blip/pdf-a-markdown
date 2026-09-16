@@ -25,11 +25,7 @@ st.markdown(
     f"""
     <style>
     .stApp {{ font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif; }}
-
-    /* Titulo principal en azul de marca */
     h1 {{ color: {COLOR_PRINCIPAL} !important; }}
-
-    /* Boton principal Assetplan */
     .stButton > button {{
         background-color: {COLOR_PRINCIPAL};
         color: #FFFFFF;
@@ -39,12 +35,7 @@ st.markdown(
         font-weight: 600;
         font-size: 15px;
     }}
-    .stButton > button:hover {{
-        filter: brightness(92%);
-        color: #FFFFFF;
-    }}
-
-    /* Boton de descarga */
+    .stButton > button:hover {{ filter: brightness(92%); color: #FFFFFF; }}
     .stDownloadButton > button {{
         background-color: {COLOR_ACENTO};
         color: #FFFFFF;
@@ -52,8 +43,6 @@ st.markdown(
         border-radius: 10px;
         font-weight: 600;
     }}
-
-    /* Zona de carga de archivos */
     [data-testid="stFileUploaderDropzone"] {{
         background-color: {COLOR_FONDO};
         border: 2px dashed {COLOR_AZUL_CLARO};
@@ -66,6 +55,32 @@ st.markdown(
 
 # Motor de conversion de Microsoft
 md = MarkItDown()
+
+
+# =====================================================================
+# OCR: leer PDFs escaneados (imagenes) pagina por pagina
+# =====================================================================
+def ocr_pdf(pdf_bytes):
+    """Convierte cada pagina del PDF a imagen y le aplica OCR en espanol."""
+    from pdf2image import convert_from_bytes, pdfinfo_from_bytes
+    import pytesseract
+
+    info = pdfinfo_from_bytes(pdf_bytes)
+    total_paginas = info["Pages"]
+
+    partes = []
+    barra = st.progress(0, text="Aplicando OCR (leyendo las imágenes)...")
+
+    for i in range(1, total_paginas + 1):
+        # Procesamos de a una pagina para no gastar memoria
+        imagenes = convert_from_bytes(pdf_bytes, dpi=200, first_page=i, last_page=i)
+        texto_pagina = pytesseract.image_to_string(imagenes[0], lang="spa")
+        partes.append(f"## Página {i}\n\n{texto_pagina.strip()}")
+        barra.progress(i / total_paginas, text=f"OCR: página {i} de {total_paginas}...")
+
+    barra.empty()
+    return "\n\n".join(partes)
+
 
 # =====================================================================
 # Encabezado
@@ -93,22 +108,36 @@ archivo = st.file_uploader(
 # =====================================================================
 if archivo is not None:
     if st.button("Optimizar y Convertir 🚀"):
-        with st.spinner("Convirtiendo tu documento..."):
-            try:
-                # Guardamos el PDF subido en un archivo temporal
+        try:
+            # Leemos los bytes del PDF una sola vez
+            pdf_bytes = archivo.read()
+
+            with st.spinner("Leyendo el documento..."):
+                # 1) Intento normal: extraer texto real con MarkItDown
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    tmp.write(archivo.read())
+                    tmp.write(pdf_bytes)
                     ruta_tmp = tmp.name
-
-                # Conversion con MarkItDown
                 resultado = md.convert(ruta_tmp)
-                texto_md = resultado.text_content
-                os.unlink(ruta_tmp)  # limpiamos el temporal
+                os.unlink(ruta_tmp)
+                texto_md = (resultado.text_content or "").strip()
+                metodo = "texto"
 
-                nombre_base = os.path.splitext(archivo.name)[0]
-                nombre_salida = f"{nombre_base}.md"
+            # 2) Si vino casi vacio -> el PDF es escaneado -> aplicamos OCR
+            if len(texto_md) < 20:
+                st.info("📷 El PDF parece escaneado (imágenes). Aplicando OCR para leer el texto... esto puede tardar un poco.")
+                texto_md = ocr_pdf(pdf_bytes).strip()
+                metodo = "OCR"
 
-                st.success(f"✅ ¡Éxito! El archivo '{nombre_salida}' está listo para Claude.")
+            nombre_base = os.path.splitext(archivo.name)[0]
+            nombre_salida = f"{nombre_base}.md"
+
+            if len(texto_md) < 5:
+                st.warning("⚠️ No se pudo extraer texto legible de este PDF. Puede estar en muy baja calidad o protegido.")
+            else:
+                if metodo == "OCR":
+                    st.success(f"✅ ¡Éxito con OCR! El archivo '{nombre_salida}' está listo para Claude.")
+                else:
+                    st.success(f"✅ ¡Éxito! El archivo '{nombre_salida}' está listo para Claude.")
 
                 st.subheader("2. Descarga el resultado")
                 st.download_button(
@@ -121,7 +150,7 @@ if archivo is not None:
                 with st.expander("👁️ Ver el contenido convertido"):
                     st.text(texto_md)
 
-            except Exception as e:
-                st.error(f"❌ Error en el proceso: {str(e)}")
+        except Exception as e:
+            st.error(f"❌ Error en el proceso: {str(e)}")
 else:
     st.info("Sube un archivo PDF para comenzar.")
